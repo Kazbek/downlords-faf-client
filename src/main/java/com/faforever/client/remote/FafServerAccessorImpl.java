@@ -85,6 +85,7 @@ import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.concurrent.Task;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 import org.apache.commons.compress.utils.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -126,7 +127,6 @@ public class FafServerAccessorImpl extends AbstractServerAccessor implements Faf
     InitializingBean, DisposableBean {
 
   private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
-  private static final long RECONNECT_DELAY = 3000;
   private Gson gson = new GsonBuilder()
       .setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES)
       .registerTypeAdapter(VictoryCondition.class, VictoryConditionTypeAdapter.INSTANCE)
@@ -148,6 +148,7 @@ public class FafServerAccessorImpl extends AbstractServerAccessor implements Faf
   private final ReportingService reportingService;
   private final TaskScheduler taskScheduler;
   private final EventBus eventBus;
+  private final ReconnectService reconnectService;
 
   @org.jetbrains.annotations.NotNull
   private final ClientProperties clientProperties;
@@ -164,6 +165,8 @@ public class FafServerAccessorImpl extends AbstractServerAccessor implements Faf
   private Socket fafServerSocket;
   private CompletableFuture<List<Avatar>> avatarsFuture;
   private CompletableFuture<List<IceServer>> iceServersFuture;
+  @Setter
+  private boolean isGameRunning = false;
 
   private void onAvatarMessage(AvatarMessage avatarMessage) {
     avatarsFuture.complete(avatarMessage.getAvatarList());
@@ -247,6 +250,7 @@ public class FafServerAccessorImpl extends AbstractServerAccessor implements Faf
 
             logger.info("FAF server connection established");
             Platform.runLater(() -> connectionState.set(ConnectionState.CONNECTED));
+            reconnectService.resetConnectionFailures();
 
             blockingReadServer(fafServerSocket);
           } catch (IOException e) {
@@ -254,8 +258,9 @@ public class FafServerAccessorImpl extends AbstractServerAccessor implements Faf
             if (isCancelled()) {
               logger.debug("Connection to FAF server has been closed");
             } else {
-              logger.warn("Lost connection to FAF server, trying to reconnect in " + RECONNECT_DELAY / 1000 + "s", e);
-              Thread.sleep(RECONNECT_DELAY);
+              logger.warn("Lost connection to Server", e);
+              reconnectService.incrementConnectionFailures();
+              reconnectService.waitForReconnect();
             }
           }
         }
@@ -272,6 +277,7 @@ public class FafServerAccessorImpl extends AbstractServerAccessor implements Faf
     executeInBackground(fafConnectionTask);
     return loginFuture;
   }
+
 
   @Override
   public CompletableFuture<GameLaunchMessage> requestHostGame(NewGameInfo newGameInfo) {
@@ -314,6 +320,7 @@ public class FafServerAccessorImpl extends AbstractServerAccessor implements Faf
   @Override
   public void reconnect() {
     IOUtils.closeQuietly(fafServerSocket);
+    reconnectService.skipWait();
   }
 
   @Override
