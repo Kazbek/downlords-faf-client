@@ -144,7 +144,7 @@ public class Ladder1v1Controller extends AbstractViewController<Node> implements
     playButton.setDisable(factionsToButtons.values().stream().noneMatch(ToggleButton::isSelected));
 
     preferenceUpdateListener = preferences -> {
-      if (preferencesService.getPreferences().getForgedAlliance().getPath() == null) {
+      if (preferencesService.getPreferences().getForgedAlliance().getInstallationPath() == null) {
         onCancelButtonClicked();
       }
     };
@@ -170,7 +170,7 @@ public class Ladder1v1Controller extends AbstractViewController<Node> implements
     });
     
     timeUntilQueuePopLabel.setVisible(false);
-    queuePopTimeUpdater = new Timeline(new KeyFrame(javafx.util.Duration.seconds(0), (ActionEvent event) -> {
+    queuePopTimeUpdater = new Timeline(1,new KeyFrame(javafx.util.Duration.seconds(0), (ActionEvent event) -> {
       if (nextQueuePopTime != null) {
         Instant now = Instant.now();
         Duration timeUntilPopQueue = Duration.between(now, nextQueuePopTime);
@@ -217,7 +217,7 @@ public class Ladder1v1Controller extends AbstractViewController<Node> implements
   }
 
   public void onPlayButtonClicked() {
-    if (preferencesService.getPreferences().getForgedAlliance().getPath() == null) {
+    if (preferencesService.getPreferences().getForgedAlliance().getInstallationPath() == null) {
       eventBus.post(new MissingGamePathEvent(true));
       return;
     }

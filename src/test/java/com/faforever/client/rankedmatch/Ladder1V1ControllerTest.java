@@ -22,7 +22,6 @@ import javafx.beans.property.SimpleObjectProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.scene.control.ToggleButton;
-
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -48,6 +47,7 @@ import static org.junit.Assert.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -156,7 +156,7 @@ public class Ladder1V1ControllerTest extends AbstractPlainJavaFxTest {
 
   @Test
   public void testOnPlayButtonClicked() throws Exception {
-    when(forgedAlliancePrefs.getPath()).thenReturn(Paths.get("."));
+    when(forgedAlliancePrefs.getInstallationPath()).thenReturn(Paths.get("."));
 
     instance.aeonButton.setSelected(true);
     instance.onFactionButtonClicked();
@@ -176,7 +176,7 @@ public class Ladder1V1ControllerTest extends AbstractPlainJavaFxTest {
 
   @Test
   public void testOnPlayButtonClickedWithNoGamePath() throws Exception {
-    when(forgedAlliancePrefs.getPath()).thenReturn(null);
+    when(forgedAlliancePrefs.getInstallationPath()).thenReturn(null);
 
     instance.onPlayButtonClicked();
 
@@ -214,7 +214,7 @@ public class Ladder1V1ControllerTest extends AbstractPlainJavaFxTest {
     
     listenerCaptor.getValue().accept(message);
     WaitForAsyncUtils.waitFor(3, TimeUnit.SECONDS, () -> instance.timeUntilQueuePopLabel.isVisible());
-    verify(i18n).get(any(), eq(1L), anyInt());
+    verify(i18n, atLeast(1)).get(any(), eq(1L), anyInt());
     WaitForAsyncUtils.waitForFxEvents();
   }
 }
