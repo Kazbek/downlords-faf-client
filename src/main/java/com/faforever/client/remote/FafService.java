@@ -37,6 +37,7 @@ import com.faforever.client.remote.domain.ServerMessage;
 import com.faforever.client.replay.Replay;
 import com.faforever.client.tournament.TournamentBean;
 import com.faforever.client.tutorial.TutorialCategory;
+import com.faforever.client.util.Tuple;
 import com.faforever.client.vault.review.Review;
 import com.faforever.client.vault.search.SearchController.SearchConfig;
 import com.faforever.client.vault.search.SearchController.SortConfig;
@@ -53,8 +54,10 @@ import org.springframework.util.Assert;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -74,7 +77,6 @@ public class FafService {
     fafServerAccessor.addOnMessageListener(type, listener);
   }
 
-  @SuppressWarnings("unchecked")
   public <T extends ServerMessage> void removeOnMessageListener(Class<T> type, Consumer<T> listener) {
     fafServerAccessor.removeOnMessageListener(type, listener);
   }
@@ -93,6 +95,10 @@ public class FafService {
 
   public CompletableFuture<GameLaunchMessage> startSearchLadder1v1(Faction faction) {
     return fafServerAccessor.startSearchLadder1v1(faction);
+  }
+
+  public void requestMatchmakerInfo() {
+    fafServerAccessor.requestMatchmakerInfo();
   }
 
   public void stopSearchingRanked() {
@@ -195,6 +201,11 @@ public class FafService {
         .collect(Collectors.toList()));
   }
 
+  @Async
+  public CompletableFuture<Set<String>> getPermissions() {
+    return CompletableFuture.completedFuture(fafApiAccessor.getOwnPlayer().getPermissions());
+  }
+
   public void selectAvatar(AvatarBean avatar) {
     fafServerAccessor.selectAvatar(avatar == null ? null : avatar.getUrl());
     eventBus.post(new AvatarChangedEvent(avatar));
@@ -251,19 +262,23 @@ public class FafService {
   }
 
   @Async
-  public CompletableFuture<List<Replay>> getNewestReplays(int topElementCount, int page) {
-    return CompletableFuture.completedFuture(fafApiAccessor.getNewestReplays(topElementCount, page)
+  public CompletableFuture<Tuple<List<Replay>, Integer>> getNewestReplaysWithPageCount(int topElementCount, int page) {
+    Tuple<List<Game>, java.util.Map<String, ?>> tuple = fafApiAccessor.getNewestReplaysWithMeta(topElementCount, page);
+    return CompletableFuture.completedFuture(new Tuple<>(tuple.getFirst()
         .parallelStream()
         .map(Replay::fromDto)
-        .collect(toList()));
+        .collect(toList()),
+        ((HashMap<String,Integer>) tuple.getSecond().get("page")).get("totalPages")));
   }
 
   @Async
-  public CompletableFuture<List<Replay>> getHighestRatedReplays(int topElementCount, int page) {
-    return CompletableFuture.completedFuture(fafApiAccessor.getHighestRatedReplays(topElementCount, page)
+  public CompletableFuture<Tuple<List<Replay>, Integer>> getHighestRatedReplaysWithPageCount(int topElementCount, int page) {
+    Tuple<List<Game>, java.util.Map<String, ?>> tuple = fafApiAccessor.getHighestRatedReplaysWithMeta(topElementCount, page);
+    return CompletableFuture.completedFuture(new Tuple<>(tuple.getFirst()
         .parallelStream()
         .map(Replay::fromDto)
-        .collect(toList()));
+        .collect(toList()),
+        ((HashMap<String,Integer>) tuple.getSecond().get("page")).get("totalPages")));
   }
 
   public void uploadMod(Path modFile, ByteCountListener byteListener) {
@@ -286,11 +301,13 @@ public class FafService {
   }
 
   @Async
-  public CompletableFuture<List<Replay>> findReplaysByQuery(String query, int maxResults, int page, SortConfig sortConfig) {
-    return CompletableFuture.completedFuture(fafApiAccessor.findReplaysByQuery(query, maxResults, page, sortConfig)
+  public CompletableFuture<Tuple<List<Replay>, Integer>> findReplaysByQueryWithPageCount(String query, int maxResults, int page, SortConfig sortConfig) {
+    Tuple<List<Game>, java.util.Map<String, ?>> tuple = fafApiAccessor.findReplaysByQueryWithMeta(query, maxResults, page, sortConfig);
+    return CompletableFuture.completedFuture(new Tuple<>(tuple.getFirst()
         .parallelStream()
         .map(Replay::fromDto)
-        .collect(toList()));
+        .collect(toList()),
+        ((HashMap<String,Integer>) tuple.getSecond().get("page")).get("totalPages")));
   }
 
   @Async
@@ -327,7 +344,7 @@ public class FafService {
       );
       review.setId(updatedReview.getId());
     } else {
-      fafApiAccessor.updateGameReview((GameReview) gameReview.setId(String.valueOf(review.getId())));
+      fafApiAccessor.updateGameReview((GameReview) gameReview.setId(review.getId()));
     }
     return CompletableFuture.completedFuture(null);
   }
@@ -348,7 +365,7 @@ public class FafService {
       );
       review.setId(updatedReview.getId());
     } else {
-      fafApiAccessor.updateModVersionReview((ModVersionReview) modVersionReview.setId(String.valueOf(review.getId())));
+      fafApiAccessor.updateModVersionReview((ModVersionReview) modVersionReview.setId(review.getId()));
     }
     return CompletableFuture.completedFuture(null);
   }
@@ -369,7 +386,7 @@ public class FafService {
       );
       review.setId(updatedReview.getId());
     } else {
-      fafApiAccessor.updateMapVersionReview((MapVersionReview) mapVersionReview.setId(String.valueOf(review.getId())));
+      fafApiAccessor.updateMapVersionReview((MapVersionReview) mapVersionReview.setId(review.getId()));
     }
 
     return CompletableFuture.completedFuture(null);

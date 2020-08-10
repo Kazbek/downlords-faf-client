@@ -78,6 +78,7 @@ import static java.util.stream.Collectors.toCollection;
 public class MapService implements InitializingBean, DisposableBean {
 
   private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+  public static final String DEBUG = "debug";
 
   private final PreferencesService preferencesService;
   private final TaskService taskService;
@@ -94,7 +95,7 @@ public class MapService implements InitializingBean, DisposableBean {
   private final String mapDownloadUrlFormat;
   private final String mapPreviewUrlFormat;
   private final Map<Path, MapBean> pathToMap = new HashMap<>();
-  private final ObservableList<MapBean> installedSkirmishMaps = FXCollections.observableArrayList();
+  private final ObservableList<MapBean> installedMaps = FXCollections.observableArrayList();
   private final Map<String, MapBean> mapsByFolderName = new HashMap<>();
   private Thread directoryWatcherThread;
 
@@ -124,7 +125,7 @@ public class MapService implements InitializingBean, DisposableBean {
     this.mapDownloadUrlFormat = vault.getMapDownloadUrlFormat();
     this.mapPreviewUrlFormat = vault.getMapPreviewUrlFormat();
 
-    installedSkirmishMaps.addListener((ListChangeListener<MapBean>) change -> {
+    installedMaps.addListener((ListChangeListener<MapBean>) change -> {
       while (change.next()) {
         for (MapBean mapBean : change.getRemoved()) {
           mapsByFolderName.remove(mapBean.getFolderName().toLowerCase());
@@ -156,7 +157,7 @@ public class MapService implements InitializingBean, DisposableBean {
   @Override
   public void afterPropertiesSet() {
     eventBus.register(this);
-    JavaFxUtil.addListener(forgedAlliancePreferences.pathProperty(), observable -> tryLoadMaps());
+    JavaFxUtil.addListener(forgedAlliancePreferences.installationPathProperty(), observable -> tryLoadMaps());
     JavaFxUtil.addListener(forgedAlliancePreferences.customMapsDirectoryProperty(), observable -> tryLoadMaps());
     tryLoadMaps();
   }
@@ -182,7 +183,7 @@ public class MapService implements InitializingBean, DisposableBean {
       // TODO notify user
     }
 
-    installedSkirmishMaps.clear();
+    installedMaps.clear();
     loadInstalledMaps();
   }
 
@@ -222,8 +223,11 @@ public class MapService implements InitializingBean, DisposableBean {
           long totalMaps = mapPaths.size();
           long mapsRead = 0;
           for (Path mapPath : mapPaths) {
+            if (mapPath.getFileName().toString().equals(DEBUG)) {
+              continue;
+            }
             updateProgress(++mapsRead, totalMaps);
-            addSkirmishMap(mapPath);
+            addInstalledMap(mapPath);
           }
         } catch (IOException e) {
           logger.warn("Maps could not be read from: " + forgedAlliancePreferences.getCustomMapsDirectory(), e);
@@ -234,15 +238,15 @@ public class MapService implements InitializingBean, DisposableBean {
   }
 
   private void removeMap(Path path) {
-    installedSkirmishMaps.remove(pathToMap.remove(path));
+    installedMaps.remove(pathToMap.remove(path));
   }
 
-  private void addSkirmishMap(Path path) throws MapLoadException {
+  private void addInstalledMap(Path path) throws MapLoadException {
     try {
       MapBean mapBean = readMap(path);
       pathToMap.put(path, mapBean);
-      if (!mapsByFolderName.containsKey(mapBean.getFolderName()) && mapBean.getType() == Type.SKIRMISH) {
-        installedSkirmishMaps.add(mapBean);
+      if (!mapsByFolderName.containsKey(mapBean.getFolderName())) {
+        installedMaps.add(mapBean);
       }
     } catch (MapLoadException e) {
       logger.warn("Map could not be read: " + path.getFileName(), e);
@@ -251,7 +255,7 @@ public class MapService implements InitializingBean, DisposableBean {
 
   @Subscribe
   public void onMapGenerated(MapGeneratedEvent event) {
-    addSkirmishMap(getPathForMap(event.getMapName()));
+    addInstalledMap(getPathForMap(event.getMapName()));
   }
 
 
@@ -291,7 +295,6 @@ public class MapService implements InitializingBean, DisposableBean {
   }
 
   @NotNull
-
   @Cacheable(value = CacheNames.MAP_PREVIEW, unless = "#result == null")
   public Image loadPreview(String mapName, PreviewSize previewSize) {
     if (mapGeneratorService.isGeneratedMap(mapName)) {
@@ -303,24 +306,14 @@ public class MapService implements InitializingBean, DisposableBean {
 
 
   public ObservableList<MapBean> getInstalledMaps() {
-    return installedSkirmishMaps;
+    return installedMaps;
   }
-
 
   public Optional<MapBean> getMapLocallyFromName(String mapFolderName) {
     logger.debug("Trying to find map '{}' locally", mapFolderName);
-    ObservableList<MapBean> installedMaps = getInstalledMaps();
-    synchronized (installedMaps) {
-      for (MapBean mapBean : installedMaps) {
-        if (mapFolderName.equalsIgnoreCase(mapBean.getFolderName())) {
-          logger.debug("Found map {} locally", mapFolderName);
-          return Optional.of(mapBean);
-        }
-      }
-    }
-    return Optional.empty();
+    String mapFolderKey = mapFolderName.toLowerCase();
+    return Optional.ofNullable(mapsByFolderName.get(mapFolderKey));
   }
-
 
   public boolean isOfficialMap(String mapName) {
     return officialMaps.stream().anyMatch(name -> name.equalsIgnoreCase(mapName));
@@ -506,7 +499,7 @@ public class MapService implements InitializingBean, DisposableBean {
     }
 
     return taskService.submitTask(task).getFuture()
-        .thenAccept(aVoid -> noCatch(() -> addSkirmishMap(getPathForMapInsensitive(folderName))));
+        .thenAccept(aVoid -> noCatch(() -> addInstalledMap(getPathForMapInsensitive(folderName))));
   }
 
   public CompletableFuture<List<MapBean>> getOwnedMaps(int playerId, int loadMoreCount, int page) {

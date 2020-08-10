@@ -202,6 +202,7 @@ public class CustomGamesController extends AbstractViewController<Node> {
     }
 
     CreateGameController createGameController = uiService.loadFxml("theme/play/create_game.fxml");
+    createGameController.setGamesRoot(gamesRoot);
 
     if (mapFolderName != null && !createGameController.selectMap(mapFolderName)) {
       log.warn("Map with folder name '{}' could not be found in map list", mapFolderName);
@@ -265,7 +266,7 @@ public class CustomGamesController extends AbstractViewController<Node> {
   }
 
   @Override
-  protected void onHide() {
+  public void onHide() {
     // Hide all games to free up memory
     filteredItems.setPredicate(game -> false);
   }
@@ -280,10 +281,10 @@ public class CustomGamesController extends AbstractViewController<Node> {
 
   private void setSidePane(boolean displayed) {
     if (displayed) {
-      toggleSidePaneButton.setText(i18n.get("view.hideSidePane"));
+      toggleSidePaneButton.setText("");
       sidePaneColumn.setMinWidth(sidePaneColumn.getPrefWidth());
     } else {
-      toggleSidePaneButton.setText(i18n.get("view.showSidePane"));
+      toggleSidePaneButton.setText("");
       sidePaneColumn.setMinWidth(0);
     }
   }

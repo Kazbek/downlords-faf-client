@@ -28,6 +28,7 @@ import static com.faforever.client.config.CacheNames.FEATURED_MOD_FILES;
 import static com.faforever.client.config.CacheNames.GLOBAL_LEADERBOARD;
 import static com.faforever.client.config.CacheNames.LADDER_1V1_LEADERBOARD;
 import static com.faforever.client.config.CacheNames.MAPS;
+import static com.faforever.client.config.CacheNames.MAP_GENERATOR;
 import static com.faforever.client.config.CacheNames.MAP_PREVIEW;
 import static com.faforever.client.config.CacheNames.MODS;
 import static com.faforever.client.config.CacheNames.MOD_THUMBNAIL;
@@ -37,8 +38,8 @@ import static com.faforever.client.config.CacheNames.STATISTICS;
 import static com.faforever.client.config.CacheNames.THEME_IMAGES;
 import static com.faforever.client.config.CacheNames.URL_PREVIEW;
 import static com.github.benmanes.caffeine.cache.Caffeine.newBuilder;
+import static java.util.concurrent.TimeUnit.HOURS;
 import static java.util.concurrent.TimeUnit.MINUTES;
-import static java.util.concurrent.TimeUnit.SECONDS;
 
 @Configuration
 @EnableCaching
@@ -53,14 +54,15 @@ public class CacheConfig extends CachingConfigurerSupport {
         new CaffeineCache(ACHIEVEMENTS, newBuilder().expireAfterWrite(10, MINUTES).build()),
         new CaffeineCache(MODS, newBuilder().expireAfterWrite(10, MINUTES).build()),
         new CaffeineCache(MAPS, newBuilder().expireAfterWrite(10, MINUTES).build()),
+        new CaffeineCache(MAP_GENERATOR, newBuilder().expireAfterWrite(10, MINUTES).build()),
         new CaffeineCache(GLOBAL_LEADERBOARD, newBuilder().maximumSize(1).expireAfterAccess(5, MINUTES).build()),
         new CaffeineCache(LADDER_1V1_LEADERBOARD, newBuilder().maximumSize(1).expireAfterAccess(5, MINUTES).build()),
-        new CaffeineCache(AVAILABLE_AVATARS, newBuilder().expireAfterAccess(30, SECONDS).build()),
-        new CaffeineCache(COOP_MAPS, newBuilder().expireAfterAccess(10, SECONDS).build()),
-        new CaffeineCache(NEWS, newBuilder().expireAfterWrite(1, MINUTES).build()),
+        new CaffeineCache(AVAILABLE_AVATARS, newBuilder().expireAfterAccess(10, MINUTES).build()),
+        new CaffeineCache(COOP_MAPS, newBuilder().expireAfterAccess(10, MINUTES).build()),
+        new CaffeineCache(NEWS, newBuilder().expireAfterWrite(5, MINUTES).build()),
         new CaffeineCache(RATING_HISTORY, newBuilder().expireAfterWrite(1, MINUTES).build()),
         new CaffeineCache(COOP_LEADERBOARD, newBuilder().expireAfterWrite(1, MINUTES).build()),
-        new CaffeineCache(CLAN, newBuilder().expireAfterWrite(1, MINUTES).build()),
+        new CaffeineCache(CLAN, newBuilder().expireAfterWrite(1, HOURS).build()),
         new CaffeineCache(FEATURED_MODS, newBuilder().build()),
         new CaffeineCache(FEATURED_MOD_FILES, newBuilder().expireAfterWrite(10, MINUTES).build()),
 

@@ -59,13 +59,14 @@ public class SearchablePropertyMappings {
       .put("latestVersion.height", new Property("map.height", true))
       .put("latestVersion.folderName", new Property("map.folderName", false))
       .put("latestVersion.ranked", new Property("map.ranked", true))
+      .put("latestVersion.id", new Property("map.versionId", false))
 
       .build();
 
   public static final Map<String, Property> MOD_PROPERTY_MAPPING = ImmutableMap.<String, Property>builder()
       .put("displayName", new Property("mod.displayName", true))
       .put("author", new Property("mod.author", false))
-
+      .put("uploader.login", new Property("mod.uploader.login", false))
       .put("latestVersion.createTime", new Property("mod.uploadedDateTime", true))
       .put("latestVersion.updateTime", new Property("mod.updatedDateTime", false))
       .put("latestVersion.description", new Property("mod.description", false))

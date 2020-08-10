@@ -3,6 +3,7 @@ package com.faforever.client.replay;
 import com.faforever.client.api.dto.Game;
 import com.faforever.client.api.dto.GamePlayerStats;
 import com.faforever.client.api.dto.Validity;
+import com.faforever.client.game.Faction;
 import com.faforever.client.map.MapBean;
 import com.faforever.client.mod.FeaturedMod;
 import com.faforever.client.vault.review.Review;
@@ -45,6 +46,7 @@ public class Replay {
   private final ObjectProperty<FeaturedMod> featuredMod;
   private final ObjectProperty<MapBean> map;
   private final ObjectProperty<Path> replayFile;
+  private final ObjectProperty<Integer> replayTicks;
   private final IntegerProperty views;
   private final ListProperty<ChatMessage> chatMessages;
   private final ListProperty<GameOption> gameOptions;
@@ -66,6 +68,7 @@ public class Replay {
     featuredMod = new SimpleObjectProperty<>();
     map = new SimpleObjectProperty<>();
     replayFile = new SimpleObjectProperty<>();
+    replayTicks = new SimpleObjectProperty<Integer>();
     views = new SimpleIntegerProperty();
     chatMessages = new SimpleListProperty<>(FXCollections.observableArrayList());
     gameOptions = new SimpleListProperty<>(FXCollections.observableArrayList());
@@ -96,6 +99,7 @@ public class Replay {
     replay.setStartTime(dto.getStartTime());
     Optional.ofNullable(dto.getEndTime()).ifPresent(replay::setEndTime);
     Optional.ofNullable(dto.getMapVersion()).ifPresent(mapVersion -> replay.setMap(MapBean.fromMapVersionDto(dto.getMapVersion())));
+    replay.setReplayTicks(dto.getReplayTicks());
 //    replay.setViews(dto.getViews());
     replay.setTeams(teams(dto));
     replay.setTeamPlayerStats(teamPlayerStats(dto));
@@ -217,6 +221,19 @@ public class Replay {
 
   public ObjectProperty<Temporal> endTimeProperty() {
     return endTime;
+  }
+
+  @Nullable
+  public Integer getReplayTicks() {
+    return replayTicks.get();
+  }
+
+  public void setReplayTicks(Integer replayTicks) {
+    this.replayTicks.set(replayTicks);
+  }
+
+  public ObjectProperty<Integer> replayTicksProperty() {
+    return replayTicks;
   }
 
   public FeaturedMod getFeaturedMod() {
@@ -386,6 +403,7 @@ public class Replay {
     private final Double afterMean;
     private final Double afterDeviation;
     private final int score;
+    private final Faction faction;
 
     public static PlayerStats fromDto(GamePlayerStats gamePlayerStats) {
       return new PlayerStats(
@@ -394,7 +412,8 @@ public class Replay {
           gamePlayerStats.getBeforeDeviation(),
           gamePlayerStats.getAfterMean() == null ? null : Double.valueOf(gamePlayerStats.getAfterMean()),
           gamePlayerStats.getAfterDeviation() == null ? null : Double.valueOf(gamePlayerStats.getAfterDeviation()),
-          gamePlayerStats.getScore()
+          gamePlayerStats.getScore(),
+          gamePlayerStats.getFaction()
       );
     }
   }

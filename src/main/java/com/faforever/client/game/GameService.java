@@ -18,6 +18,7 @@ import com.faforever.client.mod.ModService;
 import com.faforever.client.net.ConnectionState;
 import com.faforever.client.notification.Action;
 import com.faforever.client.notification.ImmediateErrorNotification;
+import com.faforever.client.notification.ImmediateNotification;
 import com.faforever.client.notification.NotificationService;
 import com.faforever.client.notification.PersistentNotification;
 import com.faforever.client.notification.Severity;
@@ -26,7 +27,7 @@ import com.faforever.client.player.Player;
 import com.faforever.client.player.PlayerService;
 import com.faforever.client.preferences.NotificationsPrefs;
 import com.faforever.client.preferences.PreferencesService;
-import com.faforever.client.rankedmatch.MatchmakerMessage;
+import com.faforever.client.rankedmatch.MatchmakerInfoMessage;
 import com.faforever.client.remote.FafService;
 import com.faforever.client.remote.ReconnectTimerService;
 import com.faforever.client.remote.domain.GameInfoMessage;
@@ -35,6 +36,7 @@ import com.faforever.client.remote.domain.GameStatus;
 import com.faforever.client.remote.domain.LoginMessage;
 import com.faforever.client.replay.ReplayServer;
 import com.faforever.client.reporting.ReportingService;
+import com.faforever.client.ui.preferences.event.GameDirectoryChooseEvent;
 import com.faforever.client.util.RatingUtil;
 import com.faforever.client.util.TimeUtil;
 import com.google.common.annotations.VisibleForTesting;
@@ -53,6 +55,7 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.collections.ObservableMap;
 import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringEscapeUtils;
 import org.jetbrains.annotations.NotNull;
@@ -78,7 +81,9 @@ import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -189,9 +194,14 @@ public class GameService implements InitializingBean {
     uidToGameInfoBean = FXCollections.observableMap(new ConcurrentHashMap<>());
     searching1v1 = new SimpleBooleanProperty();
     gameRunning = new SimpleBooleanProperty();
-
     currentGame = new SimpleObjectProperty<>();
+    games = FXCollections.observableList(new ArrayList<>(),
+        item -> new Observable[]{item.statusProperty(), item.getTeams()}
+    );
+  }
 
+  @Override
+  public void afterPropertiesSet() {
     currentGame.addListener((observable, oldValue, newValue) -> {
       if (newValue == null) {
         discordRichPresenceService.clearGameInfo();
@@ -207,11 +217,27 @@ public class GameService implements InitializingBean {
       statusChangeListener.changed(newValue.statusProperty(), newValue.getStatus(), newValue.getStatus());
     });
 
-    games = FXCollections.observableList(new ArrayList<>(),
-        item -> new Observable[]{item.statusProperty(), item.getTeams()}
-    );
     JavaFxUtil.attachListToMap(games, uidToGameInfoBean);
-    JavaFxUtil.addListener(gameRunning, (observable, oldValue, newValue) -> reconnectTimerService.setGameRunning(newValue));
+    JavaFxUtil.addListener(
+        gameRunning,
+        (observable, oldValue, newValue) -> reconnectTimerService.setGameRunning(newValue)
+    );
+
+    eventBus.register(this);
+
+    fafService.addOnMessageListener(GameInfoMessage.class, message -> Platform.runLater(() -> onGameInfo(message)));
+    fafService.addOnMessageListener(LoginMessage.class, message -> onLoggedIn());
+
+    JavaFxUtil.addListener(
+        fafService.connectionStateProperty(),
+        (observable, oldValue, newValue) -> {
+          if (newValue == ConnectionState.DISCONNECTED) {
+            synchronized (uidToGameInfoBean) {
+              uidToGameInfoBean.clear();
+            }
+          }
+        }
+    );
   }
 
   @NotNull
@@ -273,18 +299,28 @@ public class GameService implements InitializingBean {
       return completedFuture(null);
     }
 
+    if (!preferencesService.isGamePathValid()) {
+      CompletableFuture<Path> gameDirectoryFuture = postGameDirectoryChooseEvent();
+      return gameDirectoryFuture.thenCompose(path -> hostGame(newGameInfo));
+    }
+
     stopSearchLadder1v1();
 
     return updateGameIfNecessary(newGameInfo.getFeaturedMod(), null, emptyMap(), newGameInfo.getSimMods())
         .thenCompose(aVoid -> downloadMapIfNecessary(newGameInfo.getMap()))
         .thenCompose(aVoid -> fafService.requestHostGame(newGameInfo))
-        .thenAccept(gameLaunchMessage -> startGame(gameLaunchMessage, null, RatingMode.GLOBAL));
+        .thenAccept(gameLaunchMessage -> startGame(gameLaunchMessage, gameLaunchMessage.getFaction(), RatingMode.GLOBAL));
   }
 
   public CompletableFuture<Void> joinGame(Game game, String password) {
     if (isRunning()) {
       log.debug("Game is running, ignoring join request");
       return completedFuture(null);
+    }
+
+    if (!preferencesService.isGamePathValid()) {
+      CompletableFuture<Path> gameDirectoryFuture = postGameDirectoryChooseEvent();
+      return gameDirectoryFuture.thenCompose(path -> joinGame(game, password));
     }
 
     log.info("Joining game: '{}' ({})", game.getTitle(), game.getId());
@@ -335,9 +371,16 @@ public class GameService implements InitializingBean {
       log.warn("Forged Alliance is already running, not starting replay");
       return;
     }
+
+    if (!preferencesService.isGamePathValid()) {
+      CompletableFuture<Path> gameDirectoryFuture = postGameDirectoryChooseEvent();
+      gameDirectoryFuture.thenAccept(pathSet -> runWithReplay(path, replayId, featuredMod, version, modVersions, simMods, mapName));
+      return;
+    }
+
     modService.getFeaturedMod(featuredMod)
         .thenCompose(featuredModBean -> updateGameIfNecessary(featuredModBean, version, modVersions, simMods))
-        .thenCompose(aVoid -> downloadMapIfNecessary(mapName))
+        .thenCompose(aVoid -> downloadMapIfNecessary(mapName).handleAsync((ignoredResult, throwable) -> askWhetherToStartWithOutMap(throwable)))
         .thenRun(() -> {
           try {
             process = forgedAllianceService.startReplay(path, replayId);
@@ -354,6 +397,36 @@ public class GameService implements InitializingBean {
         });
   }
 
+  @NotNull
+  private CompletableFuture<Path> postGameDirectoryChooseEvent() {
+    CompletableFuture<Path> gameDirectoryFuture = new CompletableFuture<>();
+    eventBus.post(new GameDirectoryChooseEvent(gameDirectoryFuture));
+    return gameDirectoryFuture;
+  }
+
+  @SneakyThrows
+  private Void askWhetherToStartWithOutMap(Throwable throwable) {
+    if (throwable == null) {
+      return null;
+    }
+    JavaFxUtil.assertBackgroundThread();
+    log.warn("Something went wrong loading map for replay", throwable);
+
+    CountDownLatch userAnswered = new CountDownLatch(1);
+    AtomicReference<Boolean> proceed = new AtomicReference<>(false);
+    List<Action> actions = Arrays.asList(new Action(i18n.get("replay.ignoreMapNotFound"), event -> {
+          proceed.set(true);
+          userAnswered.countDown();
+        }),
+        new Action(i18n.get("replay.abortAfterMapNotFound"), event -> userAnswered.countDown()));
+    notificationService.addNotification(new ImmediateNotification(i18n.get("replay.mapDownloadFailed"), i18n.get("replay.mapDownloadFailed.wannaContinue"), Severity.WARN, actions));
+    userAnswered.await();
+    if (!proceed.get()) {
+      throw throwable;
+    }
+    return null;
+  }
+
   private void notifyCantPlayReplay(@Nullable Integer replayId, Throwable throwable) {
     log.error("Could not play replay '" + replayId + "'", throwable);
     notificationService.addNotification(new ImmediateErrorNotification(
@@ -368,6 +441,11 @@ public class GameService implements InitializingBean {
     if (isRunning()) {
       log.warn("Forged Alliance is already running, not starting live replay");
       return completedFuture(null);
+    }
+
+    if (!preferencesService.isGamePathValid()) {
+      CompletableFuture<Path> gameDirectoryFuture = postGameDirectoryChooseEvent();
+      return gameDirectoryFuture.thenCompose(path -> runWithLiveReplay(replayUrl, gameId, gameType, mapName));
     }
 
     Game gameBean = getByUid(gameId);
@@ -402,14 +480,19 @@ public class GameService implements InitializingBean {
     return game;
   }
 
-  public void addOnRankedMatchNotificationListener(Consumer<MatchmakerMessage> listener) {
-    fafService.addOnMessageListener(MatchmakerMessage.class, listener);
+  public void addOnRankedMatchNotificationListener(Consumer<MatchmakerInfoMessage> listener) {
+    fafService.addOnMessageListener(MatchmakerInfoMessage.class, listener);
   }
 
   public CompletableFuture<Void> startSearchLadder1v1(Faction faction) {
     if (isRunning()) {
       log.debug("Game is running, ignoring 1v1 search request");
       return completedFuture(null);
+    }
+
+    if (!preferencesService.isGamePathValid()) {
+      CompletableFuture<Path> gameDirectoryFuture = postGameDirectoryChooseEvent();
+      return gameDirectoryFuture.thenCompose(path -> startSearchLadder1v1(faction));
     }
 
     searching1v1.set(true);
@@ -419,10 +502,11 @@ public class GameService implements InitializingBean {
         .thenCompose(aVoid -> fafService.startSearchLadder1v1(faction))
         .thenAccept((gameLaunchMessage) -> downloadMapIfNecessary(gameLaunchMessage.getMapname())
             .thenRun(() -> {
-              // TODO this should be sent by the server!
               gameLaunchMessage.setArgs(new ArrayList<>(gameLaunchMessage.getArgs()));
-              gameLaunchMessage.getArgs().add("/team 1");
-              gameLaunchMessage.getArgs().add("/players 2");
+
+              gameLaunchMessage.getArgs().add("/team " + gameLaunchMessage.getTeam());
+              gameLaunchMessage.getArgs().add("/players " + gameLaunchMessage.getExpectedPlayers());
+              gameLaunchMessage.getArgs().add("/startspot " + gameLaunchMessage.getMapPosition());
 
               startGame(gameLaunchMessage, faction, RatingMode.LADDER_1V1);
             }))
@@ -596,19 +680,6 @@ public class GameService implements InitializingBean {
     }
   }
 
-  @Override
-  public void afterPropertiesSet() {
-    eventBus.register(this);
-    fafService.addOnMessageListener(GameInfoMessage.class, message -> Platform.runLater(() -> onGameInfo(message)));
-    fafService.addOnMessageListener(LoginMessage.class, message -> onLoggedIn());
-    JavaFxUtil.addListener(fafService.connectionStateProperty(), (observable, oldValue, newValue) -> {
-      if (newValue == ConnectionState.DISCONNECTED) {
-        synchronized (uidToGameInfoBean) {
-          uidToGameInfoBean.clear();
-        }
-      }
-    });
-  }
 
   private void onLoggedIn() {
     if (isGameRunning()) {
@@ -729,7 +800,6 @@ public class GameService implements InitializingBean {
     game.setFeaturedMod(gameInfoMessage.getFeaturedMod());
     game.setNumPlayers(gameInfoMessage.getNumPlayers());
     game.setMaxPlayers(gameInfoMessage.getMaxPlayers());
-    game.setVictoryCondition(gameInfoMessage.getGameType());
     Optional.ofNullable(gameInfoMessage.getLaunchedAt()).ifPresent(aDouble -> game.setStartTime(
         TimeUtil.fromPythonTime(aDouble.longValue()).toInstant()
     ));
@@ -749,13 +819,6 @@ public class GameService implements InitializingBean {
       game.getTeams().clear();
       if (gameInfoMessage.getTeams() != null) {
         game.getTeams().putAll(gameInfoMessage.getTeams());
-      }
-    }
-
-    synchronized (game.getFeaturedModVersions()) {
-      game.getFeaturedModVersions().clear();
-      if (gameInfoMessage.getFeaturedModVersions() != null) {
-        game.getFeaturedModVersions().putAll(gameInfoMessage.getFeaturedModVersions());
       }
     }
 
@@ -814,6 +877,13 @@ public class GameService implements InitializingBean {
   }
 
   public void launchTutorial(MapBean mapVersion, String technicalMapName) {
+
+    if (!preferencesService.isGamePathValid()) {
+      CompletableFuture<Path> gameDirectoryFuture = postGameDirectoryChooseEvent();
+      gameDirectoryFuture.thenAccept(path -> launchTutorial(mapVersion, technicalMapName));
+      return;
+    }
+
     modService.getFeaturedMod(TUTORIALS.getTechnicalName())
         .thenCompose(featuredModBean -> updateGameIfNecessary(featuredModBean, null, emptyMap(), emptySet()))
         .thenCompose(aVoid -> downloadMapIfNecessary(mapVersion.getFolderName()))

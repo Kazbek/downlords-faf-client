@@ -29,6 +29,7 @@ public class Preferences {
   public static final String DEFAULT_THEME_NAME = "default";
 
   private final WindowPrefs mainWindow;
+  private final GeneratorPrefs generatorPrefs;
   private final ForgedAlliancePrefs forgedAlliance;
   private final LoginPrefs login;
   private final ChatPrefs chat;
@@ -37,7 +38,6 @@ public class Preferences {
   private final LocalizationPrefs localization;
   private final LastGamePrefs lastGamePrefs;
   private final BooleanProperty prereleaseCheckEnabled;
-  private final BooleanProperty rememberLastTab;
   private final BooleanProperty showPasswordProtectedGames;
   private final BooleanProperty showModdedGames;
   private final ListProperty<String> ignoredNotifications;
@@ -58,6 +58,7 @@ public class Preferences {
     gameTileSortingOrder = new SimpleObjectProperty<>(TilesSortingOrder.PLAYER_DES);
     chat = new ChatPrefs();
     login = new LoginPrefs();
+    generatorPrefs = new GeneratorPrefs();
 
     localization = new LocalizationPrefs();
     lastGamePrefs = new LastGamePrefs();
@@ -66,14 +67,13 @@ public class Preferences {
     themeName = new SimpleStringProperty(DEFAULT_THEME_NAME);
     ignoredNotifications = new SimpleListProperty<>(observableArrayList());
     notification = new NotificationsPrefs();
-    rememberLastTab = new SimpleBooleanProperty(true);
     ladder1v1 = new Ladder1v1Prefs();
     gamesViewMode = new SimpleStringProperty();
     news = new NewsPrefs();
     developer = new DeveloperPrefs();
     gameListSorting = new SimpleListProperty<>(observableArrayList());
     vaultPrefs = new VaultPrefs();
-    unitDataBaseType = new SimpleObjectProperty<>(UnitDataBaseType.RACKOVER);
+    unitDataBaseType = new SimpleObjectProperty<>(UnitDataBaseType.SPOOKY);
     storedCookies = new SimpleMapProperty<>(FXCollections.observableHashMap());
     showPasswordProtectedGames = new SimpleBooleanProperty(true);
     showModdedGames = new SimpleBooleanProperty(true);
@@ -154,18 +154,6 @@ public class Preferences {
 
   public StringProperty themeNameProperty() {
     return themeName;
-  }
-
-  public boolean getRememberLastTab() {
-    return rememberLastTab.get();
-  }
-
-  public void setRememberLastTab(boolean rememberLastTab) {
-    this.rememberLastTab.set(rememberLastTab);
-  }
-
-  public BooleanProperty rememberLastTabProperty() {
-    return rememberLastTab;
   }
 
   public ObservableList<String> getIgnoredNotifications() {
@@ -262,6 +250,26 @@ public class Preferences {
 
   public BooleanProperty prereleaseCheckEnabledProperty() {
     return prereleaseCheckEnabled;
+  }
+
+  public boolean isShowPasswordProtectedGames() {
+    return showPasswordProtectedGames.get();
+  }
+
+  public void setShowPasswordProtectedGames(boolean showPasswordProtectedGames) {
+    this.showPasswordProtectedGames.set(showPasswordProtectedGames);
+  }
+
+  public boolean isShowModdedGames() {
+    return showModdedGames.get();
+  }
+
+  public void setShowModdedGames(boolean showModdedGames) {
+    this.showModdedGames.set(showModdedGames);
+  }
+
+  public GeneratorPrefs getGeneratorPrefs() {
+    return generatorPrefs;
   }
 
   public enum UnitDataBaseType {

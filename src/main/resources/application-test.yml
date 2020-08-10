@@ -6,10 +6,11 @@ faf-client:
     host: irc.test.faforever.com
 
   vault:
-    base-url: http://content.test.faforever.com
+    base-url: https://content.test.faforever.com
+    replay-download-url-format: https://replay.test.faforever.com/%s
 
   news:
-    feed-url: https://direct.faforever.com/news/feed
+    feed-url: https://direct.test.faforever.com/news/feed
 
   replay:
     remote-host: test.faforever.com
@@ -18,9 +19,9 @@ faf-client:
     base-url: https://www.test.faforever.com
 
   api:
-    base-url: http://api.test.faforever.com
+    base-url: https://api.test.faforever.com
     client-id: 3bc8282c-7730-11e5-8bcf-feff819cdc9f
     client-secret: 6035bd78-7730-11e5-8bcf-feff819cdc9f
 
   forged-alliance:
-    exe-url: http://content.test.faforever.com/faf/updaterNew/updates_faf_files/ForgedAlliance.exe
+    exe-url: https://content.test.faforever.com/faf/updaterNew/updates_faf_files/ForgedAlliance.exe

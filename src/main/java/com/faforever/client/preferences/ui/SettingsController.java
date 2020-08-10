@@ -8,6 +8,7 @@ import com.faforever.client.fx.JavaFxUtil;
 import com.faforever.client.fx.PlatformService;
 import com.faforever.client.fx.StringListCell;
 import com.faforever.client.i18n.I18n;
+import com.faforever.client.main.event.NavigationItem;
 import com.faforever.client.notification.Action;
 import com.faforever.client.notification.NotificationService;
 import com.faforever.client.notification.PersistentNotification;
@@ -20,6 +21,7 @@ import com.faforever.client.preferences.Preferences.UnitDataBaseType;
 import com.faforever.client.preferences.PreferencesService;
 import com.faforever.client.preferences.TimeInfo;
 import com.faforever.client.preferences.ToastPosition;
+import com.faforever.client.preferences.WindowPrefs;
 import com.faforever.client.settings.LanguageItemController;
 import com.faforever.client.theme.Theme;
 import com.faforever.client.theme.UiService;
@@ -52,6 +54,7 @@ import javafx.scene.layout.Region;
 import javafx.stage.FileChooser;
 import javafx.stage.Popup;
 import javafx.stage.Screen;
+import javafx.util.StringConverter;
 import javafx.util.converter.NumberStringConverter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
@@ -112,7 +115,6 @@ public class SettingsController implements Controller<Node> {
   public CheckBox afterGameReviewCheckBox;
   public Region settingsRoot;
   public ComboBox<Theme> themeComboBox;
-  public Toggle rememberLastTabToggle;
   public ToggleGroup toastPositionToggleGroup;
   public ComboBox<Screen> toastScreenComboBox;
   public ToggleButton bottomLeftToastButton;
@@ -130,15 +132,16 @@ public class SettingsController implements Controller<Node> {
   public Toggle notifyOnAtMentionOnlyToggle;
   public Pane languagesContainer;
   public TextField backgroundImageLocation;
-  public CheckBox disallowJoinsCheckBox;
+  public ToggleButton disallowJoinsCheckBox;
   public ToggleButton secondaryVaultLocationToggleButton;
   public Button autoJoinChannelsButton;
   public ToggleButton advancedIceLogToggleButton;
   public ToggleButton prereleaseToggleButton;
+  private final InvalidationListener availableLanguagesListener;
   private Popup autojoinChannelsPopUp;
   private ChangeListener<Theme> selectedThemeChangeListener;
   private ChangeListener<Theme> currentThemeChangeListener;
-  private InvalidationListener availableLanguagesListener;
+  public ComboBox<NavigationItem> startTabChoiceBox;
 
   public SettingsController(UserService userService, PreferencesService preferencesService, UiService uiService,
                             I18n i18n, EventBus eventBus, NotificationService notificationService,
@@ -236,7 +239,14 @@ public class SettingsController implements Controller<Node> {
     });
 
     currentThemeChangeListener = (observable, oldValue, newValue) -> themeComboBox.getSelectionModel().select(newValue);
-    selectedThemeChangeListener = (observable, oldValue, newValue) -> uiService.setTheme(newValue);
+    selectedThemeChangeListener = (observable, oldValue, newValue) -> {
+      uiService.setTheme(newValue);
+      if (oldValue != null && uiService.doesThemeNeedRestart(newValue)) {
+        notificationService.addNotification(new PersistentNotification(i18n.get("theme.needsRestart.message", newValue.getDisplayName()), Severity.WARN,
+            Collections.singletonList(new Action(i18n.get("theme.needsRestart.quit"), event -> Platform.exit()))));
+        // FIXME reload application (stage & application context) https://github.com/FAForever/downlords-faf-client/issues/1794
+      }
+    };
 
     JavaFxUtil.addListener(preferences.getNotification().toastPositionProperty(), (observable, oldValue, newValue) -> setSelectedToastPosition(newValue));
     setSelectedToastPosition(preferences.getNotification().getToastPosition());
@@ -257,9 +267,9 @@ public class SettingsController implements Controller<Node> {
     configureTimeSetting(preferences);
     configureChatSetting(preferences);
     configureLanguageSelection();
-    configureThemeSelection(preferences);
-    configureRememberLastTab(preferences);
+    configureThemeSelection();
     configureToastScreen(preferences);
+    configureStartTab(preferences);
 
     displayFriendOnlineToastCheckBox.selectedProperty().bindBidirectional(preferences.getNotification().friendOnlineToastEnabledProperty());
     displayFriendOfflineToastCheckBox.selectedProperty().bindBidirectional(preferences.getNotification().friendOfflineToastEnabledProperty());
@@ -277,7 +287,7 @@ public class SettingsController implements Controller<Node> {
     notifyOnAtMentionOnlyToggle.selectedProperty().bindBidirectional(preferences.getNotification().notifyOnAtMentionOnlyEnabledProperty());
     enableSoundsToggle.selectedProperty().bindBidirectional(preferences.getNotification().soundsEnabledProperty());
     forceRelayToggle.selectedProperty().bindBidirectional(preferences.getForgedAlliance().forceRelayProperty());
-    gameLocationTextField.textProperty().bindBidirectional(preferences.getForgedAlliance().pathProperty(), PATH_STRING_CONVERTER);
+    gameLocationTextField.textProperty().bindBidirectional(preferences.getForgedAlliance().installationPathProperty(), PATH_STRING_CONVERTER);
     autoDownloadMapsToggle.selectedProperty().bindBidirectional(preferences.getForgedAlliance().autoDownloadMapsProperty());
 
     executableDecoratorField.textProperty().bindBidirectional(preferences.getForgedAlliance().executableDecoratorProperty());
@@ -304,6 +314,24 @@ public class SettingsController implements Controller<Node> {
     });
 
     initUnitDatabaseSelection(preferences);
+  }
+
+  private void configureStartTab(Preferences preferences) {
+    WindowPrefs mainWindow = preferences.getMainWindow();
+    startTabChoiceBox.setItems(FXCollections.observableArrayList(NavigationItem.values()));
+    startTabChoiceBox.setConverter(new StringConverter<>() {
+      @Override
+      public String toString(NavigationItem navigationItem) {
+        return i18n.get(navigationItem.getI18nKey());
+      }
+
+      @Override
+      public NavigationItem fromString(String s) {
+        throw new UnsupportedOperationException("Not needed");
+      }
+    });
+    startTabChoiceBox.getSelectionModel().select(mainWindow.getNavigationItem());
+    mainWindow.navigationItemProperty().bind(startTabChoiceBox.getSelectionModel().selectedItemProperty());
   }
 
   private void initUnitDatabaseSelection(Preferences preferences) {
@@ -371,17 +399,10 @@ public class SettingsController implements Controller<Node> {
     }
   }
 
-  private void configureRememberLastTab(Preferences preferences) {
-    JavaFxUtil.bindBidirectional(rememberLastTabToggle.selectedProperty(), preferences.rememberLastTabProperty());
-  }
-
-  private void configureThemeSelection(Preferences preferences) {
+  private void configureThemeSelection() {
     themeComboBox.setItems(FXCollections.observableArrayList(uiService.getAvailableThemes()));
 
-    Theme currentTheme = themeComboBox.getItems().stream()
-        .filter(theme -> theme.getDisplayName().equals(preferences.getThemeName()))
-        .findFirst().orElse(UiService.DEFAULT_THEME);
-    themeComboBox.getSelectionModel().select(currentTheme);
+    themeComboBox.getSelectionModel().select(uiService.getCurrentTheme());
 
     themeComboBox.getSelectionModel().selectedItemProperty().addListener(selectedThemeChangeListener);
     JavaFxUtil.addListener(uiService.currentThemeProperty(), new WeakChangeListener<>(currentThemeChangeListener));
@@ -522,6 +543,10 @@ public class SettingsController implements Controller<Node> {
 
   public void openDiscordFeedbackChannel() {
     platformService.showDocument(clientProperties.getDiscord().getDiscordPrereleaseFeedbackChannelUrl());
+  }
+
+  public void openWebsite() {
+    platformService.showDocument(clientProperties.getWebsite().getBaseUrl());
   }
 }
 

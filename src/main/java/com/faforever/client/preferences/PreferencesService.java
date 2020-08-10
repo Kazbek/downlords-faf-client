@@ -20,6 +20,7 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.ButtonType;
 import javafx.scene.paint.Color;
+import lombok.SneakyThrows;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.bridge.SLF4JBridgeHandler;
@@ -27,6 +28,8 @@ import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
+import java.io.BufferedInputStream;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
@@ -40,6 +43,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.DigestInputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -142,8 +148,9 @@ public class PreferencesService implements InitializingBean {
   @Override
   public void afterPropertiesSet() throws IOException {
     if (Files.exists(preferencesFilePath)) {
-      deleteFileIfEmpty();
-      readExistingFile(preferencesFilePath);
+      if (!deleteFileIfEmpty()) {
+        readExistingFile(preferencesFilePath);
+      }
     } else {
       preferences = new Preferences();
     }
@@ -161,7 +168,10 @@ public class PreferencesService implements InitializingBean {
    * migrations.
    */
   private void migratePreferences(Preferences preferences) {
-    preferences.getForgedAlliance().setInstallationPath(preferences.getForgedAlliance().getPath());
+    if (preferences.getForgedAlliance().getPath() != null) {
+      preferences.getForgedAlliance().setInstallationPath(preferences.getForgedAlliance().getPath());
+      preferences.getForgedAlliance().setPath(null);
+    }
     storeInBackground();
   }
 
@@ -172,11 +182,16 @@ public class PreferencesService implements InitializingBean {
 
   /**
    * It may happen that the file is empty when the process is forcibly killed, so remove the file if that happened.
+   *
+   * @return true if the file was deleted
    */
-  private void deleteFileIfEmpty() throws IOException {
+  private boolean deleteFileIfEmpty() throws IOException {
     if (Files.size(preferencesFilePath) == 0) {
       Files.delete(preferencesFilePath);
+      preferences = new Preferences();
+      return true;
     }
+    return false;
   }
 
   public Path getFafBinDirectory() {
@@ -331,8 +346,52 @@ public class PreferencesService implements InitializingBean {
     return getFafDataDirectory().resolve("themes");
   }
 
+  @SneakyThrows
   public boolean isGamePathValid() {
-    return preferences.getForgedAlliance().getInstallationPath() != null && isGamePathValid(preferences.getForgedAlliance().getInstallationPath().resolve("bin"));
+    return isGamePathValidWithError(preferences.getForgedAlliance().getInstallationPath()) == null;
+  }
+
+  public String isGamePathValidWithError(Path installationPath) throws IOException, NoSuchAlgorithmException {
+    boolean valid = installationPath != null && isGamePathValid(installationPath.resolve("bin"));
+    if (!valid) {
+      return "gamePath.select.noValidExe";
+    }
+    Path binPath = installationPath.resolve("bin");
+    String exeHash;
+    if (Files.exists(binPath.resolve(FORGED_ALLIANCE_EXE))) {
+      exeHash = sha256OfFile(binPath.resolve(FORGED_ALLIANCE_EXE));
+    } else {
+      exeHash = sha256OfFile(binPath.resolve(SUPREME_COMMANDER_EXE));
+    }
+    for (String hash : clientProperties.getVanillaGameHashes()) {
+      logger.debug("Hash of Supreme Commander.exe in selected User directory: " + exeHash);
+      if (hash.equals(exeHash)) {
+        return "gamePath.select.vanillaGameSelected";
+      }
+    }
+
+    if (binPath.equals(getFafBinDirectory())) {
+      return "gamePath.select.fafDataSelected";
+    }
+
+    return null;
+  }
+
+  private String sha256OfFile(Path path) throws IOException, NoSuchAlgorithmException {
+    byte[] buffer = new byte[4096];
+    MessageDigest digest = MessageDigest.getInstance("SHA-256");
+    BufferedInputStream bis = new BufferedInputStream(new FileInputStream(path.toFile()));
+    DigestInputStream digestInputStream = new DigestInputStream(bis, digest);
+    while (digestInputStream.read(buffer) > -1) {
+    }
+    digest = digestInputStream.getMessageDigest();
+    digestInputStream.close();
+    byte[] sha256 = digest.digest();
+    StringBuilder sb = new StringBuilder();
+    for (byte b : sha256) {
+      sb.append(String.format("%02X", b));
+    }
+    return sb.toString().toUpperCase();
   }
 
   public boolean isGamePathValid(Path binPath) {

@@ -262,7 +262,7 @@ public class IceAdapterImpl implements IceAdapter, InitializingBean, DisposableB
       case DEFAULT_LOBBY:
         iceAdapterProxy.setLobbyInitMode("normal");
         break;
-      case NO_LOBBY:
+      case AUTO_LOBBY:
         iceAdapterProxy.setLobbyInitMode("auto");
         break;
     }
@@ -292,8 +292,13 @@ public class IceAdapterImpl implements IceAdapter, InitializingBean, DisposableB
   }
 
   private void updateLobbyModeFromGameInfo(GameLaunchMessage gameLaunchMessage) {
+    if (gameLaunchMessage.getInitMode() != null) {
+      lobbyInitMode = gameLaunchMessage.getInitMode();
+      return;
+    }
+
     if (KnownFeaturedMod.LADDER_1V1.getTechnicalName().equals(gameLaunchMessage.getMod())) {
-      lobbyInitMode = LobbyMode.NO_LOBBY;
+      lobbyInitMode = LobbyMode.AUTO_LOBBY;
     } else {
       lobbyInitMode = LobbyMode.DEFAULT_LOBBY;
     }

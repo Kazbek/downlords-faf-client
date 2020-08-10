@@ -4,7 +4,9 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Data
@@ -32,6 +34,7 @@ public class ClientProperties {
   private boolean showIceAdapterDebugWindow;
   private String statusPageUrl;
   private Map<String, String> links = new HashMap<>();
+  private List<String> vanillaGameHashes = new ArrayList<>();
 
   @Data
   public static class News {
@@ -78,6 +81,7 @@ public class ClientProperties {
   public static class Vault {
     private String baseUrl;
     private String rulesUrl;
+    private String mapValidationUrl;
     private String mapDownloadUrlFormat;
     private String mapPreviewUrlFormat;
     private String replayDownloadUrlFormat;
@@ -124,6 +128,7 @@ public class ClientProperties {
     private String baseUrl;
     private String forgotPasswordUrl;
     private String createAccountUrl;
+    private String newsHubUrl;
   }
 
   @Data
@@ -145,6 +150,9 @@ public class ClientProperties {
     private String downloadUrlFormat;
     private String repoAndOwnerName;
     private String queryLatestVersionUrl;
+    private String queryVersionsUrl;
+    private int maxSupportedMajorVersion;
+    private int minSupportedMajorVersion;
   }
 
   @Data

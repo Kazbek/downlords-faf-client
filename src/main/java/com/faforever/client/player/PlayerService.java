@@ -10,6 +10,8 @@ import com.faforever.client.game.Game;
 import com.faforever.client.game.GameAddedEvent;
 import com.faforever.client.game.GameRemovedEvent;
 import com.faforever.client.game.GameUpdatedEvent;
+import com.faforever.client.game.KnownFeaturedMod;
+import com.faforever.client.player.event.CurrentPlayerInfo;
 import com.faforever.client.player.event.FriendJoinedGameEvent;
 import com.faforever.client.remote.FafService;
 import com.faforever.client.remote.domain.GameStatus;
@@ -191,7 +193,9 @@ public class PlayerService implements InitializingBean {
     if (!playersByGame.get(game.getId()).contains(player)) {
       player.setGame(game);
       playersByGame.get(game.getId()).add(player);
-      if (player.getSocialStatus() == FRIEND && game.getStatus() == GameStatus.OPEN) {
+      if (player.getSocialStatus() == FRIEND
+          && game.getStatus() == GameStatus.OPEN
+          && !game.getFeaturedMod().equals(KnownFeaturedMod.LADDER_1V1.getTechnicalName())) {
         eventBus.post(new FriendJoinedGameEvent(player, game));
       }
     }
@@ -288,7 +292,7 @@ public class PlayerService implements InitializingBean {
   }
 
   private void onPlayersInfo(PlayersMessage playersMessage) {
-    playersMessage.getPlayers().forEach(this::onPlayerInfo);
+    playersMessage.getPlayers().forEach(dto -> JavaFxUtil.assureRunOnMainThread(() -> onPlayerInfo(dto)));
   }
 
   private void onFoeList(SocialMessage socialMessage) {
@@ -323,6 +327,7 @@ public class PlayerService implements InitializingBean {
       Player player = getCurrentPlayer().orElseThrow(() -> new IllegalStateException("Player has not been set"));
       player.updateFromDto(dto);
       player.setSocialStatus(SELF);
+      eventBus.post(new CurrentPlayerInfo(player));
     } else {
       Player player = createAndGetPlayerForUsername(dto.getLogin());
 

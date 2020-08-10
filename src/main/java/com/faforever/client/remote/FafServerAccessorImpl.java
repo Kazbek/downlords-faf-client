@@ -8,6 +8,7 @@ import com.faforever.client.fa.CloseGameEvent;
 import com.faforever.client.fa.relay.GpgClientMessageSerializer;
 import com.faforever.client.fa.relay.GpgGameMessage;
 import com.faforever.client.fa.relay.GpgServerMessageType;
+import com.faforever.client.fa.relay.LobbyMode;
 import com.faforever.client.game.Faction;
 import com.faforever.client.game.NewGameInfo;
 import com.faforever.client.i18n.I18n;
@@ -20,6 +21,7 @@ import com.faforever.client.notification.NotificationService;
 import com.faforever.client.notification.ReportAction;
 import com.faforever.client.notification.Severity;
 import com.faforever.client.preferences.PreferencesService;
+import com.faforever.client.rankedmatch.MatchmakerInfoClientMessage;
 import com.faforever.client.rankedmatch.SearchLadder1v1ClientMessage;
 import com.faforever.client.rankedmatch.StopSearchLadder1v1ClientMessage;
 import com.faforever.client.remote.domain.AddFoeMessage;
@@ -61,9 +63,11 @@ import com.faforever.client.remote.domain.ServerMessage;
 import com.faforever.client.remote.domain.SessionMessage;
 import com.faforever.client.remote.domain.VictoryCondition;
 import com.faforever.client.remote.gson.ClientMessageTypeTypeAdapter;
+import com.faforever.client.remote.gson.FactionTypeAdapter;
 import com.faforever.client.remote.gson.GameAccessTypeAdapter;
 import com.faforever.client.remote.gson.GameStateTypeAdapter;
 import com.faforever.client.remote.gson.GpgServerMessageTypeTypeAdapter;
+import com.faforever.client.remote.gson.LobbyModeTypeAdapter;
 import com.faforever.client.remote.gson.MessageTargetTypeAdapter;
 import com.faforever.client.remote.gson.RatingRangeTypeAdapter;
 import com.faforever.client.remote.gson.ServerMessageTypeAdapter;
@@ -95,9 +99,9 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.util.ClassUtils;
 import org.springframework.util.StringUtils;
 
+import javax.security.auth.login.LoginException;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.Socket;
@@ -135,6 +139,8 @@ public class FafServerAccessorImpl extends AbstractServerAccessor implements Faf
       .registerTypeAdapter(MessageTarget.class, MessageTargetTypeAdapter.INSTANCE)
       .registerTypeAdapter(ServerMessage.class, ServerMessageTypeAdapter.INSTANCE)
       .registerTypeAdapter(RatingRange.class, RatingRangeTypeAdapter.INSTANCE)
+      .registerTypeAdapter(Faction.class, FactionTypeAdapter.INSTANCE)
+      .registerTypeAdapter(LobbyMode.class, LobbyModeTypeAdapter.INSTANCE)
       .create();
   private final HashMap<Class<? extends ServerMessage>, Collection<Consumer<ServerMessage>>> messageListeners = new HashMap<>();
 
@@ -218,10 +224,10 @@ public class FafServerAccessorImpl extends AbstractServerAccessor implements Faf
     this.password = password;
 
     // TODO extract class?
-    fafConnectionTask = new Task<Void>() {
+    fafConnectionTask = new Task<>() {
 
       @Override
-      protected Void call() throws Exception {
+      protected Void call() {
         while (!isCancelled()) {
           Server server = clientProperties.getServer();
           String serverHost = server.getHost();
@@ -253,6 +259,12 @@ public class FafServerAccessorImpl extends AbstractServerAccessor implements Faf
             if (isCancelled()) {
               log.debug("Connection to FAF server has been closed");
             } else {
+              if (loginFuture != null) {
+                loginFuture.completeExceptionally(new LoginFailedException("Lost connection to server during login"));
+                loginFuture = null;
+                fafConnectionTask.cancel();
+                return null;
+              }
               log.warn("Lost connection to Server", e);
               reconnectTimerService.incrementConnectionFailures();
               reconnectTimerService.waitForReconnect();
@@ -260,6 +272,18 @@ public class FafServerAccessorImpl extends AbstractServerAccessor implements Faf
           }
         }
         return null;
+      }
+
+      @Override
+      protected void failed() {
+        super.failed();
+        log.error("Server connection task failed", getException());
+        if (loginFuture != null) {
+          loginFuture.completeExceptionally(new LoginException("The server connection task failed, an internal error occurred"));
+          loginFuture = null;
+        }
+        IOUtils.closeQuietly(serverWriter);
+        IOUtils.closeQuietly(fafServerSocket);
       }
 
       @Override
@@ -326,6 +350,11 @@ public class FafServerAccessorImpl extends AbstractServerAccessor implements Faf
   @Override
   public void addFoe(int playerId) {
     writeToServer(new AddFoeMessage(playerId));
+  }
+
+  @Override
+  public void requestMatchmakerInfo() {
+    writeToServer(new MatchmakerInfoClientMessage());
   }
 
   @Override
@@ -458,10 +487,7 @@ public class FafServerAccessorImpl extends AbstractServerAccessor implements Faf
             .forEach(consumer -> consumer.accept(serverMessage));
         messageClass = messageClass.getSuperclass();
       }
-      for (Class<?> type : ClassUtils.getAllInterfacesForClassAsSet(messageClass)) {
-        messageListeners.getOrDefault(messageClass, Collections.emptyList())
-            .forEach(consumer -> consumer.accept(serverMessage));
-      }
+
     } catch (JsonSyntaxException e) {
       log.warn("Could not deserialize message: " + jsonString, e);
     }
@@ -483,6 +509,8 @@ public class FafServerAccessorImpl extends AbstractServerAccessor implements Faf
     if (loginFuture != null) {
       loginFuture.complete(loginServerMessage);
       loginFuture = null;
+    } else {
+      log.warn("Unexpected login message from server");
     }
   }
 
@@ -517,7 +545,7 @@ public class FafServerAccessorImpl extends AbstractServerAccessor implements Faf
     gameLaunchFuture = null;
   }
 
-  @Scheduled(fixedRate = 60_000, initialDelay = 60_000)
+  @Scheduled(fixedDelay = 60_000, initialDelay = 60_000)
   @Override
   public void ping() {
     if (fafServerSocket == null || !fafServerSocket.isConnected() || serverWriter == null) {

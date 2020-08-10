@@ -4,6 +4,7 @@ import com.faforever.client.config.ClientProperties;
 import com.faforever.client.discord.DiscordRichPresenceService;
 import com.faforever.client.fa.ForgedAllianceService;
 import com.faforever.client.fa.RatingMode;
+import com.faforever.client.fa.relay.LobbyMode;
 import com.faforever.client.fa.relay.event.RehostRequestEvent;
 import com.faforever.client.fa.relay.ice.IceAdapter;
 import com.faforever.client.fx.PlatformService;
@@ -26,6 +27,7 @@ import com.faforever.client.remote.domain.GameLaunchMessage;
 import com.faforever.client.replay.ReplayServer;
 import com.faforever.client.reporting.ReportingService;
 import com.faforever.client.test.AbstractPlainJavaFxTest;
+import com.faforever.client.ui.preferences.event.GameDirectoryChooseEvent;
 import com.google.common.eventbus.EventBus;
 import com.google.common.eventbus.Subscribe;
 import javafx.beans.property.SimpleObjectProperty;
@@ -147,6 +149,7 @@ public class GameServiceTest extends AbstractPlainJavaFxTest {
     Preferences preferences = new Preferences();
 
     when(preferencesService.getPreferences()).thenReturn(preferences);
+    when(preferencesService.isGamePathValid()).thenReturn(true);
     when(fafService.connectionStateProperty()).thenReturn(new SimpleObjectProperty<>());
     when(replayService.start(anyInt(), any())).thenReturn(completedFuture(LOCAL_REPLAY_PORT));
     when(iceAdapter.start()).thenReturn(completedFuture(GPG_PORT));
@@ -410,11 +413,18 @@ public class GameServiceTest extends AbstractPlainJavaFxTest {
   public void testStartSearchLadder1v1() throws Exception {
     int uid = 123;
     String map = "scmp_037";
-    GameLaunchMessage gameLaunchMessage = new GameLaunchMessageBuilder().defaultValues().uid(uid).mod("ladder1v1").mapname(map).get();
+    GameLaunchMessage gameLaunchMessage = new GameLaunchMessageBuilder().defaultValues()
+        .uid(uid).mod("ladder1v1").mapname(map)
+        .expectedPlayers(2)
+        .faction(CYBRAN)
+        .initMode(LobbyMode.AUTO_LOBBY)
+        .mapPosition(4)
+        .team(1)
+        .get();
 
     FeaturedMod featuredMod = FeaturedModBeanBuilder.create().defaultValues().get();
 
-    String[] additionalArgs = { "/team", "1", "/players", "2" };
+    String[] additionalArgs = {"/team", "1", "/players", "2", "/startspot", "4"};
     mockStartGameProcess(uid, RatingMode.LADDER_1V1, CYBRAN, false, additionalArgs);
     when(fafService.startSearchLadder1v1(CYBRAN)).thenReturn(completedFuture(gameLaunchMessage));
     when(gameUpdater.update(featuredMod, null, Collections.emptyMap(), Collections.emptySet())).thenReturn(completedFuture(null));
@@ -528,5 +538,47 @@ public class GameServiceTest extends AbstractPlainJavaFxTest {
 
     WaitForAsyncUtils.waitForFxEvents();
     verify(notificationService).addNotification(any(PersistentNotification.class));
+  }
+
+  @Test
+  public void testGameHostIfNoGameSet() {
+    when(preferencesService.isGamePathValid()).thenReturn(false);
+    instance.hostGame(null);
+    verify(eventBus).post(any(GameDirectoryChooseEvent.class));
+  }
+
+  @Test
+  public void runWithLiveReplayIfNoGameSet() {
+    when(preferencesService.isGamePathValid()).thenReturn(false);
+    instance.runWithLiveReplay(null, null, null, null);
+    verify(eventBus).post(any(GameDirectoryChooseEvent.class));
+  }
+
+  @Test
+  public void startSearchLadder1v1IfNoGameSet() {
+    when(preferencesService.isGamePathValid()).thenReturn(false);
+    instance.startSearchLadder1v1(null);
+    verify(eventBus).post(any(GameDirectoryChooseEvent.class));
+  }
+
+  @Test
+  public void joinGameIfNoGameSet() {
+    when(preferencesService.isGamePathValid()).thenReturn(false);
+    instance.joinGame(null, null);
+    verify(eventBus).post(any(GameDirectoryChooseEvent.class));
+  }
+
+  @Test
+  public void runWithReplayIfNoGameSet() {
+    when(preferencesService.isGamePathValid()).thenReturn(false);
+    instance.runWithReplay(null, null, null, null, null, null, null);
+    verify(eventBus).post(any(GameDirectoryChooseEvent.class));
+  }
+
+  @Test
+  public void launchTutorialIfNoGameSet() {
+    when(preferencesService.isGamePathValid()).thenReturn(false);
+    instance.launchTutorial(null, null);
+    verify(eventBus).post(any(GameDirectoryChooseEvent.class));
   }
 }

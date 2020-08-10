@@ -8,11 +8,12 @@ import java.util.Map;
 
 public enum Faction {
   // Order is crucial
+  // Same order as the info from the server (1=UEF etc.)
+  UEF("uef"),
   AEON("aeon"),
   CYBRAN("cybran"),
-  UEF("uef"),
   SERAPHIM("seraphim"),
-  NOMAD("nomad"),
+  RANDOM("random"),
   CIVILIAN("civilian");
 
   private static final Map<String, Faction> fromString;

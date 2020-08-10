@@ -15,6 +15,7 @@ import com.faforever.client.main.event.NavigateEvent;
 import com.faforever.client.main.event.NavigationItem;
 import com.faforever.client.main.event.Open1v1Event;
 import com.faforever.client.news.UnreadNewsEvent;
+import com.faforever.client.notification.Action;
 import com.faforever.client.notification.ImmediateNotification;
 import com.faforever.client.notification.ImmediateNotificationController;
 import com.faforever.client.notification.NotificationService;
@@ -28,8 +29,8 @@ import com.faforever.client.player.PlayerService;
 import com.faforever.client.preferences.PreferencesService;
 import com.faforever.client.preferences.WindowPrefs;
 import com.faforever.client.preferences.ui.SettingsController;
-import com.faforever.client.rankedmatch.MatchmakerMessage;
-import com.faforever.client.rankedmatch.MatchmakerMessage.MatchmakerQueue.QueueName;
+import com.faforever.client.rankedmatch.MatchmakerInfoMessage;
+import com.faforever.client.rankedmatch.MatchmakerInfoMessage.MatchmakerQueue.QueueName;
 import com.faforever.client.remote.domain.RatingRange;
 import com.faforever.client.theme.UiService;
 import com.faforever.client.ui.StageHolder;
@@ -106,7 +107,7 @@ public class MainController implements Controller<Node> {
   private static final PseudoClass NOTIFICATION_ERROR_PSEUDO_CLASS = PseudoClass.getPseudoClass("error");
   private static final PseudoClass HIGHLIGHTED = PseudoClass.getPseudoClass("highlighted");
   @VisibleForTesting
-  protected static final PseudoClass MAIN_MINIMIZED = PseudoClass.getPseudoClass("minimized");
+  protected static final PseudoClass MAIN_WINDOW_RESTORED = PseudoClass.getPseudoClass("restored");
   private final Cache<NavigationItem, AbstractViewController<?>> viewCache;
   private final PreferencesService preferencesService;
   private final I18n i18n;
@@ -119,8 +120,8 @@ public class MainController implements Controller<Node> {
   private final PlatformService platformService;
   private final VaultFileSystemLocationChecker vaultFileSystemLocationChecker;
   private final ApplicationEventPublisher applicationEventPublisher;
-  private String mainWindowTitle;
-  private int ratingBeta;
+  private final String mainWindowTitle;
+  private final int ratingBeta;
   public Pane mainHeaderPane;
   public Labeled notificationsBadge;
   public Pane contentPane;
@@ -207,7 +208,7 @@ public class MainController implements Controller<Node> {
   private void listenOnMinimizedToSetExtraDragBar() {
     WindowPrefs windowPrefs = preferencesService.getPreferences()
         .getMainWindow();
-    InvalidationListener invalidationListener = observable -> mainHeaderPane.pseudoClassStateChanged(MAIN_MINIMIZED, !windowPrefs.getMaximized());
+    InvalidationListener invalidationListener = observable -> mainHeaderPane.pseudoClassStateChanged(MAIN_WINDOW_RESTORED, !windowPrefs.getMaximized());
     JavaFxUtil.addListener(windowPrefs.maximizedProperty(), invalidationListener);
     invalidationListener.invalidated(windowPrefs.maximizedProperty());
   }
@@ -304,7 +305,7 @@ public class MainController implements Controller<Node> {
     }
   }
 
-  private void onMatchmakerMessage(MatchmakerMessage message) {
+  private void onMatchmakerMessage(MatchmakerInfoMessage message) {
     if (message.getQueues() == null
         || gameService.gameRunningProperty().get()
         || gameService.searching1v1Property().get()
@@ -319,18 +320,18 @@ public class MainController implements Controller<Node> {
     int deviationFor75PercentQuality = (int) (ratingBeta / 1.25f);
     float leaderboardRatingDeviation = currentPlayer.getLeaderboardRatingDeviation();
 
-    Function<MatchmakerMessage.MatchmakerQueue, List<RatingRange>> ratingRangesSupplier;
+    Function<MatchmakerInfoMessage.MatchmakerQueue, List<RatingRange>> ratingRangesSupplier;
     if (leaderboardRatingDeviation <= deviationFor80PercentQuality) {
-      ratingRangesSupplier = MatchmakerMessage.MatchmakerQueue::getBoundary80s;
+      ratingRangesSupplier = MatchmakerInfoMessage.MatchmakerQueue::getBoundary80s;
     } else if (leaderboardRatingDeviation <= deviationFor75PercentQuality) {
-      ratingRangesSupplier = MatchmakerMessage.MatchmakerQueue::getBoundary75s;
+      ratingRangesSupplier = MatchmakerInfoMessage.MatchmakerQueue::getBoundary75s;
     } else {
       return;
     }
 
     float leaderboardRatingMean = currentPlayer.getLeaderboardRatingMean();
     boolean showNotification = false;
-    for (MatchmakerMessage.MatchmakerQueue matchmakerQueue : message.getQueues()) {
+    for (MatchmakerInfoMessage.MatchmakerQueue matchmakerQueue : message.getQueues()) {
       if (!Objects.equals(QueueName.LADDER_1V1, matchmakerQueue.getQueueName())) {
         continue;
       }
@@ -483,18 +484,41 @@ public class MainController implements Controller<Node> {
     applicationEventPublisher.publishEvent(new LoggedInEvent());
 
     gamePathHandler.detectAndUpdateGamePath();
-    restoreLastView();
+    openStartTab();
   }
 
-  private void restoreLastView() {
-    final NavigationItem navigationItem;
-    if (preferencesService.getPreferences().getRememberLastTab()) {
-      final WindowPrefs mainWindowPrefs = preferencesService.getPreferences().getMainWindow();
-      navigationItem = Optional.ofNullable(NavigationItem.fromString(mainWindowPrefs.getLastView())).orElse(NavigationItem.NEWS);
-    } else {
+  @VisibleForTesting
+  void openStartTab() {
+    final WindowPrefs mainWindow = preferencesService.getPreferences().getMainWindow();
+    NavigationItem navigationItem = mainWindow.getNavigationItem();
+    if (navigationItem == null) {
       navigationItem = NavigationItem.NEWS;
+      askUserForPreferenceOverStartTab(mainWindow);
     }
     eventBus.post(new NavigateEvent(navigationItem));
+  }
+
+  private void askUserForPreferenceOverStartTab(WindowPrefs mainWindow) {
+    mainWindow.setNavigationItem(NavigationItem.NEWS);
+    preferencesService.storeInBackground();
+    List<Action> actions = Collections.singletonList(new Action(i18n.get("startTab.configure"), event -> {
+      makePopUpAskingForPreferenceInStartTab(mainWindow);
+    }));
+    notificationService.addNotification(new PersistentNotification(i18n.get("startTab.wantToConfigure"), Severity.INFO, actions));
+  }
+
+  private void makePopUpAskingForPreferenceInStartTab(WindowPrefs mainWindow) {
+    StartTabChooseController startTabChooseController = uiService.loadFxml("theme/start_tab_choose.fxml");
+    Action saveAction = new Action(i18n.get("startTab.save"), event -> {
+      NavigationItem newSelection = startTabChooseController.getSelected();
+      mainWindow.setNavigationItem(newSelection);
+      preferencesService.storeInBackground();
+      eventBus.post(new NavigateEvent(newSelection));
+    });
+    ImmediateNotification notification =
+        new ImmediateNotification(i18n.get("startTab.title"), i18n.get("startTab.message"),
+            Severity.INFO, null, Collections.singletonList(saveAction), startTabChooseController.getRoot());
+    notificationService.addNotification(notification);
   }
 
   public void onNotificationsButtonClicked() {
@@ -549,8 +573,6 @@ public class MainController implements Controller<Node> {
         .ifPresent(toggle -> toggle.setSelected(true));
 
     currentItem = item;
-    preferencesService.getPreferences().getMainWindow().setLastView(item.name());
-    preferencesService.storeInBackground();
   }
 
   private AbstractViewController<?> getView(NavigationItem item) {

@@ -325,6 +325,16 @@ public final class JavaFxUtil {
   }
 
   /**
+   * Since the JavaFX properties API is not thread safe, removing listeners must be synchronized on the property - which
+   * is what this method does.
+   */
+  public static <T, U> void removeListener(ObservableMap<T, U> observable, MapChangeListener<T, U> listener) {
+    synchronized (observable) {
+      observable.removeListener(listener);
+    }
+  }
+
+  /**
    * Since the JavaFX properties API is not thread safe, binding a property must be synchronized on the property - which
    * is what this method does.
    */
@@ -395,5 +405,13 @@ public final class JavaFxUtil {
     final User32 user32 = User32.INSTANCE;
     int newStyle = user32.GetWindowLong(hwnd, GWL_STYLE) | 0x00020000; //WS_MINIMIZEBOX
     user32.SetWindowLong(hwnd, GWL_STYLE, newStyle);
+  }
+
+  public static void assureRunOnMainThread(Runnable runnable) {
+    if (Platform.isFxApplicationThread()) {
+      runnable.run();
+    } else {
+      runLater(runnable);
+    }
   }
 }

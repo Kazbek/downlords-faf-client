@@ -5,6 +5,7 @@ import com.faforever.client.config.ClientProperties;
 import com.faforever.client.fx.Controller;
 import com.faforever.client.fx.JavaFxUtil;
 import com.faforever.client.fx.StringCell;
+import com.faforever.client.game.Faction;
 import com.faforever.client.game.RatingType;
 import com.faforever.client.game.TeamCardController;
 import com.faforever.client.i18n.I18n;
@@ -34,6 +35,7 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
+import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.Clipboard;
@@ -78,6 +80,7 @@ public class ReplayDetailController implements Controller<Node> {
   public Label timeLabel;
   public Label modLabel;
   public Label durationLabel;
+  public Label replayDurationLabel;
   public Label playerCountLabel;
   public Label ratingLabel;
   public Label qualityLabel;
@@ -142,7 +145,18 @@ public class ReplayDetailController implements Controller<Node> {
 
     reviewsController.getRoot().setMaxSize(Integer.MAX_VALUE, Integer.MAX_VALUE);
 
+
     copyButton.setText(i18n.get("replay.copyUrl"));
+
+    dateLabel.setTooltip(new Tooltip(i18n.get("replay.dateTooltip")));
+    timeLabel.setTooltip(new Tooltip(i18n.get("replay.timeTooltip")));
+    modLabel.setTooltip(new Tooltip(i18n.get("replay.modTooltip")));
+    durationLabel.setTooltip(new Tooltip(i18n.get("replay.durationTooltip")));
+    replayDurationLabel.setTooltip(new Tooltip(i18n.get("replay.replayDurationTooltip")));
+    playerCountLabel.setTooltip(new Tooltip(i18n.get("replay.playerCountTooltip")));
+    ratingLabel.setTooltip(new Tooltip(i18n.get("replay.ratingTooltip")));
+    qualityLabel.setTooltip(new Tooltip(i18n.get("replay.qualityTooltip")));
+
     onClosure = () -> ((Pane) replayDetailRoot.getParent()).getChildren().remove(replayDetailRoot);
   }
 
@@ -171,7 +185,18 @@ public class ReplayDetailController implements Controller<Node> {
       durationLabel.setVisible(false);
     }
 
-    modLabel.setText(replay.getFeaturedMod().getDisplayName());
+    Integer replayTicks = replay.getReplayTicks();
+    if (replayTicks != null) {
+      replayDurationLabel.setText(timeService.shortDuration(Duration.ofMillis(replayTicks * 100)));
+    } else {
+      replayDurationLabel.setVisible(false);
+    }
+
+    modLabel.setText(
+      Optional.ofNullable(replay.getFeaturedMod())
+        .map(mod -> mod.getDisplayName())
+        .orElseGet(() -> i18n.get("unknown"))
+    );
     playerCountLabel.setText(i18n.number(replay.getTeams().values().stream().mapToInt(List::size).sum()));
     double gameQuality = ratingService.calculateQuality(replay);
     if (!Double.isNaN(gameQuality)) {
@@ -286,11 +311,18 @@ public class ReplayDetailController implements Controller<Node> {
 
       TeamCardController controller = uiService.loadFxml("theme/team_card.fxml");
       teamCardControllers.add(controller);
+
+      Function<Player, Rating> playerRatingFunction = player -> {
+        PlayerStats playerStats = statsByPlayerId.get(player.getId());
+        return new Rating(playerStats.getBeforeMean(), playerStats.getBeforeDeviation());
+      };
+
+      Function<Player, Faction> playerFactionFunction = player -> statsByPlayerId.get(player.getId()).getFaction();
+
       playerService.getPlayersByIds(playerIds)
-          .thenAccept(players -> controller.setPlayersInTeam(team, players, player -> {
-            PlayerStats playerStats = statsByPlayerId.get(player.getId());
-            return new Rating(playerStats.getBeforeMean(), playerStats.getBeforeDeviation());
-          }, RatingType.EXACT));
+          .thenAccept(players ->
+              controller.setPlayersInTeam(team, players, playerRatingFunction, playerFactionFunction, RatingType.EXACT)
+          );
 
       teamsContainer.getChildren().add(controller.getRoot());
     }));

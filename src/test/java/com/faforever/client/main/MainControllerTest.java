@@ -8,7 +8,10 @@ import com.faforever.client.game.GamePathHandler;
 import com.faforever.client.game.GameService;
 import com.faforever.client.i18n.I18n;
 import com.faforever.client.login.LoginController;
+import com.faforever.client.main.event.NavigateEvent;
+import com.faforever.client.main.event.NavigationItem;
 import com.faforever.client.notification.NotificationService;
+import com.faforever.client.notification.PersistentNotification;
 import com.faforever.client.notification.PersistentNotificationsController;
 import com.faforever.client.notification.TransientNotification;
 import com.faforever.client.notification.TransientNotificationsController;
@@ -17,8 +20,8 @@ import com.faforever.client.player.PlayerService;
 import com.faforever.client.preferences.Preferences;
 import com.faforever.client.preferences.PreferencesService;
 import com.faforever.client.preferences.ui.SettingsController;
-import com.faforever.client.rankedmatch.MatchmakerMessage;
-import com.faforever.client.rankedmatch.MatchmakerMessage.MatchmakerQueue.QueueName;
+import com.faforever.client.rankedmatch.MatchmakerInfoMessage;
+import com.faforever.client.rankedmatch.MatchmakerInfoMessage.MatchmakerQueue.QueueName;
 import com.faforever.client.remote.domain.RatingRange;
 import com.faforever.client.test.AbstractPlainJavaFxTest;
 import com.faforever.client.theme.UiService;
@@ -216,6 +219,20 @@ public class MainControllerTest extends AbstractPlainJavaFxTest {
     assertThat(instance.getRoot().getParent(), CoreMatchers.is(nullValue()));
   }
 
+  @Test
+  public void testOpenStartTabWithItemSet() throws Exception {
+    preferences.getMainWindow().setNavigationItem(NavigationItem.PLAY);
+    instance.openStartTab();
+    verify(eventBus, times(1)).post(eq(new NavigateEvent(NavigationItem.PLAY)));
+  }
+
+  @Test
+  public void testOpenStartTabWithItemNotSet() throws Exception {
+    preferences.getMainWindow().setNavigationItem(null);
+    instance.openStartTab();
+    verify(eventBus, times(1)).post(eq(new NavigateEvent(NavigationItem.NEWS)));
+    verify(notificationService, times(1)).addNotification(any(PersistentNotification.class));
+  }
 
   @Test
   public void testOnMatchMakerMessageDisplaysNotification80Quality() {
@@ -233,7 +250,7 @@ public class MainControllerTest extends AbstractPlainJavaFxTest {
 
   private void prepareTestMatchmakerMessageTest(float deviation) {
     @SuppressWarnings("unchecked")
-    ArgumentCaptor<Consumer<MatchmakerMessage>> matchmakerMessageCaptor = ArgumentCaptor.forClass(Consumer.class);
+    ArgumentCaptor<Consumer<MatchmakerInfoMessage>> matchmakerMessageCaptor = ArgumentCaptor.forClass(Consumer.class);
     preferences.getNotification().setLadder1v1ToastEnabled(true);
     when(playerService.getCurrentPlayer()).thenReturn(
         Optional.ofNullable(PlayerBuilder.create("JUnit").leaderboardRatingMean(1500).leaderboardRatingDeviation(deviation).get())
@@ -241,8 +258,8 @@ public class MainControllerTest extends AbstractPlainJavaFxTest {
 
     verify(gameService).addOnRankedMatchNotificationListener(matchmakerMessageCaptor.capture());
 
-    MatchmakerMessage matchmakerMessage = new MatchmakerMessage();
-    matchmakerMessage.setQueues(singletonList(new MatchmakerMessage.MatchmakerQueue(QueueName.LADDER_1V1, null,
+    MatchmakerInfoMessage matchmakerMessage = new MatchmakerInfoMessage();
+    matchmakerMessage.setQueues(singletonList(new MatchmakerInfoMessage.MatchmakerQueue(QueueName.LADDER_1V1, null,
         singletonList(new RatingRange(1500, 1510)), singletonList(new RatingRange(1500, 1510)))));
     matchmakerMessageCaptor.getValue().accept(matchmakerMessage);
   }
@@ -269,11 +286,11 @@ public class MainControllerTest extends AbstractPlainJavaFxTest {
   @Test
   public void testOnMatchMakerMessageDisplaysNotificationNullQueues() {
     @SuppressWarnings("unchecked")
-    ArgumentCaptor<Consumer<MatchmakerMessage>> matchmakerMessageCaptor = ArgumentCaptor.forClass(Consumer.class);
+    ArgumentCaptor<Consumer<MatchmakerInfoMessage>> matchmakerMessageCaptor = ArgumentCaptor.forClass(Consumer.class);
 
     verify(gameService).addOnRankedMatchNotificationListener(matchmakerMessageCaptor.capture());
 
-    MatchmakerMessage matchmakerMessage = new MatchmakerMessage();
+    MatchmakerInfoMessage matchmakerMessage = new MatchmakerInfoMessage();
     matchmakerMessage.setQueues(null);
     matchmakerMessageCaptor.getValue().accept(matchmakerMessage);
 
@@ -287,7 +304,7 @@ public class MainControllerTest extends AbstractPlainJavaFxTest {
       preferences.getMainWindow().setMaximized(false);
     });
     WaitForAsyncUtils.waitForFxEvents();
-    assertThat(instance.mainHeaderPane.getPseudoClassStates(), hasItem(MainController.MAIN_MINIMIZED));
+    assertThat(instance.mainHeaderPane.getPseudoClassStates(), hasItem(MainController.MAIN_WINDOW_RESTORED));
   }
 
   @Test
@@ -297,19 +314,19 @@ public class MainControllerTest extends AbstractPlainJavaFxTest {
       preferences.getMainWindow().setMaximized(true);
     });
     WaitForAsyncUtils.waitForFxEvents();
-    assertThat(instance.mainHeaderPane.getPseudoClassStates(), not(hasItem(MainController.MAIN_MINIMIZED)));
+    assertThat(instance.mainHeaderPane.getPseudoClassStates(), not(hasItem(MainController.MAIN_WINDOW_RESTORED)));
   }
 
   @Test
   public void testOnMatchMakerMessageDisplaysNotificationWithQueuesButDisabled() {
     @SuppressWarnings("unchecked")
-    ArgumentCaptor<Consumer<MatchmakerMessage>> matchmakerMessageCaptor = ArgumentCaptor.forClass(Consumer.class);
+    ArgumentCaptor<Consumer<MatchmakerInfoMessage>> matchmakerMessageCaptor = ArgumentCaptor.forClass(Consumer.class);
     preferences.getNotification().setLadder1v1ToastEnabled(true);
 
     verify(gameService).addOnRankedMatchNotificationListener(matchmakerMessageCaptor.capture());
 
-    MatchmakerMessage matchmakerMessage = new MatchmakerMessage();
-    matchmakerMessage.setQueues(singletonList(new MatchmakerMessage.MatchmakerQueue(QueueName.LADDER_1V1, null,
+    MatchmakerInfoMessage matchmakerMessage = new MatchmakerInfoMessage();
+    matchmakerMessage.setQueues(singletonList(new MatchmakerInfoMessage.MatchmakerQueue(QueueName.LADDER_1V1, null,
         singletonList(new RatingRange(1500, 1510)), singletonList(new RatingRange(1500, 1510)))));
     matchmakerMessageCaptor.getValue().accept(matchmakerMessage);
 
@@ -317,6 +334,9 @@ public class MainControllerTest extends AbstractPlainJavaFxTest {
   }
 
   @Test
+  /**
+   * Test fails in certain 2 Screen setups
+   */
   public void testWindowOutsideScreensGetsCentered() throws Exception {
     Rectangle2D visualBounds = Screen.getPrimary().getBounds();
     preferences.getMainWindow().setY(visualBounds.getMaxY() + 1);

@@ -18,7 +18,6 @@ buildscript {
     classpath("gradle.plugin.install4j.install4j:gradle_plugin:7.0.7")
     classpath("org.springframework.build.gradle:propdeps-plugin:${propdepsVersion}")
     classpath "org.springframework.boot:spring-boot-gradle-plugin:${springBootVersion}"
-    classpath("org.kt3k.gradle.plugin:coveralls-gradle-plugin:${coverallsGradlePluginVersion}")
   }
 }
 
@@ -28,19 +27,19 @@ plugins {
   id "de.undercouch.download" version "3.4.3"
   id "io.franzbecker.gradle-lombok" version "1.14"
   id 'net.ltgt.apt' version '0.19'
+  id 'jacoco'
+  id 'com.github.kt3k.coveralls' version "${coverallsGradlePluginVersion}"
 }
 
 apply plugin: 'java'
 apply plugin: 'org.springframework.boot'
 apply plugin: 'io.spring.dependency-management'
 apply plugin: 'propdeps'
-apply plugin: 'jacoco'
-apply plugin: 'com.github.kt3k.coveralls'
 apply plugin: 'distribution'
 
 
-sourceCompatibility = JavaVersion.VERSION_1_10
-targetCompatibility = JavaVersion.VERSION_1_10
+sourceCompatibility = JavaVersion.VERSION_11
+targetCompatibility = JavaVersion.VERSION_11
 
 // These are read from gradle.properties
 version "${version}"
@@ -212,6 +211,9 @@ task downloadUnixUid(type: Download) {
   src "https://github.com/FAForever/uid/releases/download/v${faf_uid_version}/faf-uid"
   dest file("${buildDir}/resources/native/faf-uid")
   onlyIfNewer true
+  doLast {
+    file("${buildDir}/resources/native/faf-uid").setExecutable(true, false)
+  }
 }
 
 task downloadWindowsUid(type: Download) {
@@ -228,10 +230,6 @@ task downloadNativeDependencies(dependsOn: [downloadUnixUid, downloadWindowsUid,
 compileJava.dependsOn 'downloadNativeDependencies'
 compileJava.dependsOn ':webview-patch:build'
 
-task wrapper(type: Wrapper) {
-  gradleVersion = '4.5.1'
-}
-
 task sendCoverageToCodacy(type: JavaExec, dependsOn: jacocoTestReport) {
   main = "com.codacy.CodacyCoverageReporter"
   classpath = configurations.codacy
@@ -246,10 +244,6 @@ repositories {
   maven { url "https://dl.bintray.com/typesafe/maven-releases" }
   maven { url "https://maven.teamdev.com/repository/products" }
   maven { url "https://repo.spring.io/milestone/" }
-}
-
-jacoco {
-  toolVersion = "${jacocoVersion}"
 }
 
 dependencies {
@@ -286,7 +280,6 @@ dependencies {
   compile("com.github.rutledgepaulv:q-builders:${qBuildersVersion}")
   compile("com.github.nsp:JSkills:${jSkillsVersion}")
   compile("com.github.jasminb:jsonapi-converter:${jsonapiConverterVersion}")
-  compile("com.github.Brutus5000:BiReUS-JCL:${bireusVersion}")
   compile("com.jfoenix:jfoenix:${jfoenixVersion}")
   compile("javax.annotation:javax.annotation-api:1.3.1")
   compile("com.github.ben-manes.caffeine:caffeine")
@@ -316,7 +309,6 @@ dependencies {
   testCompile("org.springframework.boot:spring-boot-starter-test")
 
   optional("org.springframework.boot:spring-boot-configuration-processor")
-
 
   codacy("com.github.codacy:codacy-coverage-reporter:-SNAPSHOT")
 }
